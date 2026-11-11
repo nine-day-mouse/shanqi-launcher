@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+      Name="闪启 Launcher"
+      Manufacturer="ShanQi"
+      Version="$(var.Version)"
+      UpgradeCode="8F3A2C41-7B5E-4D92-9C61-0A4E7D3F1B85"
+      Scope="perUser"
+      Compressed="yes">
+
+    <SummaryInformation Description="闪启 Launcher — 键盘启动器" />
+
+    <MajorUpgrade DowngradeErrorMessage="已安装更新版本的闪启 Launcher。" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="ShanQiLauncher" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenuFolder" Name="闪启 Launcher" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main" Title="闪启 Launcher" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="AppShortcuts" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="..\release-standalone\**" />
+    </ComponentGroup>
+  </Fragment>
+
+  <Fragment>
+    <Component Id="AppShortcuts" Directory="AppMenuFolder" Guid="C1D4E7A2-5B83-4F96-8E27-6D9A0C3B5E48">
+      <Shortcut
+          Id="StartMenuShortcut"
+          Name="闪启 Launcher"
+          Description="键盘启动器"
+          Target="[INSTALLFOLDER]Flow.Launcher.exe"
+          WorkingDirectory="INSTALLFOLDER" />
+      <Shortcut
+          Id="DesktopShortcut"
+          Directory="DesktopFolder"
+          Name="闪启 Launcher"
+          Description="键盘启动器"
+          Target="[INSTALLFOLDER]Flow.Launcher.exe"
+          WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="RemoveAppMenuFolder" Directory="AppMenuFolder" On="uninstall" />
+      <RegistryValue
+          Root="HKCU"
+          Key="Software\ShanQi\Launcher"
+          Name="Installed"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+    </Component>
+  </Fragment>
+
+</Wix>

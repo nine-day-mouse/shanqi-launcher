@@ -1,0 +1,27 @@
+# ---- 构建产物 ----
+/release/
+/release-standalone/
+Output/
+[Bb]in/
+[Oo]bj/
+*.wixpdb
+
+# ---- 安装包产物 ----
+/ShanQiLauncher-Setup-*.msi
+/ShanQiLauncher-Setup-*.exe
+
+# ---- 与源码发布无关的本地文件 ----
+/others_codes/
+/Tiez/
+/_backup_clipboard_data/
+/package.json
+
+# ---- 编辑器 / 系统 ----
+.vs/
+.vscode/
+.idea/
+Thumbs.db
+*.user
+*.suo
+*.DotSettings.user
+*.log

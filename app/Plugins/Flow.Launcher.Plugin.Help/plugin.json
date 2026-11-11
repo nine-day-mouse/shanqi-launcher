@@ -1,0 +1,14 @@
+{
+  "ID": "A3D7E914-2C68-4B05-9F71-8E4D6C2A1B57",
+  "ActionKeywords": [
+    "help"
+  ],
+  "Name": "使用帮助",
+  "Description": "空输入时展示各功能的关键字用法",
+  "Author": "daddy",
+  "Version": "1.0.0",
+  "Language": "csharp",
+  "Website": "",
+  "ExecuteFileName": "Flow.Launcher.Plugin.Help.dll",
+  "IcoPath": "Images\\plugin.png"
+}

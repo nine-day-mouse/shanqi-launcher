@@ -1,0 +1,15 @@
+{
+  "ID": "C7A1F3D2-9B4E-4E82-A6C1-3D8B7F2E5A10",
+  "ActionKeywords": [
+    "f"
+  ],
+  "Name": "文件导航",
+  "Description": "接入 Everything 的文件夹搜索，支持逐级浏览",
+  "Author": "daddy",
+  "Version": "1.0.0",
+  "Language": "csharp",
+  "Website": "",
+  "ExecuteFileName": "Flow.Launcher.Plugin.FileManager.dll",
+  "IcoPath": "Images\\folder.png",
+  "SearchDelayTime": 200
+}

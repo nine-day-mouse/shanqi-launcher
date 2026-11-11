@@ -1,0 +1,586 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
+using System.Windows.Controls;
+using Flow.Launcher.Plugin.Calculator.Storage;
+using Flow.Launcher.Plugin.Calculator.ViewModels;
+using Flow.Launcher.Plugin.Calculator.Views;
+using Mages.Core;
+
+namespace Flow.Launcher.Plugin.Calculator
+{
+    public class Main : IPlugin, IPluginI18n, ISettingProvider, ISavable
+    {
+        private static readonly Regex ThousandGroupRegex = MainRegexHelper.GetThousandGroupRegex();
+        private static readonly Regex NumberRegex = MainRegexHelper.GetNumberRegex();
+        private static readonly Regex PowRegex = MainRegexHelper.GetPowRegex();
+        private static readonly Regex LogRegex = MainRegexHelper.GetLogRegex();
+        private static readonly Regex LnRegex = MainRegexHelper.GetLnRegex();
+        private static readonly Regex FunctionRegex = MainRegexHelper.GetFunctionRegex();
+
+        private static Engine MagesEngine;
+        private const string Comma = ",";
+        private const string Dot = ".";
+        private const string IcoPath = "Images/calculator.png";
+
+        private static readonly List<Result> EmptyResults = [];
+
+        private History History { get; set; } = null!;
+        internal static PluginInitContext Context { get; private set; } = null!;
+
+        private Settings _settings;
+        private SettingsViewModel _viewModel;
+
+        public void Init(PluginInitContext context)
+        {
+            Context = context;
+            _settings = context.API.LoadSettingJsonStorage<Settings>();
+            History = context.API.LoadSettingJsonStorage<History>();
+            _viewModel = new SettingsViewModel(_settings, History.CancelPending);
+
+            MagesEngine = new Engine(new Configuration
+            {
+                Scope = new Dictionary<string, object>
+                {
+                    { "e", Math.E }, // e is not contained in the default mages engine
+                }
+            });
+        }
+
+        public List<Result> Query(Query query)
+        {
+            // Invalidate any debounced history entry as soon as the query changes, so an
+            // earlier complete result is not saved while the user is still editing the expression.
+            if (_settings.EnableHistory && _settings.HistoryCreationMode == HistoryCreationMode.OnQuery)
+            {
+                History.CancelPending();
+            }
+
+            if (string.IsNullOrWhiteSpace(query.Search))
+            {
+                // If user set a non-global action keyword, we show the history results when they do not type anything
+                if (_settings.EnableHistory && !string.IsNullOrEmpty(query.ActionKeyword)) // Empty for home/global.
+                {
+                    return GetHistoryResults(query.Search, query.ActionKeyword);
+                }
+                return EmptyResults;
+            }
+
+            try
+            {
+                var search = query.Search;
+                // Keep the user's original input so the history shows what they typed
+                // rather than the normalized expression used for evaluation.
+                var originalQuery = query.Search;
+                bool isFunctionPresent = FunctionRegex.IsMatch(search);
+                // Mages is case sensitive, so we need to convert all function names to lower case.
+                search = FunctionRegex.Replace(search, m => m.Value.ToLowerInvariant());
+
+                var decimalSep = GetDecimalSeparator();
+                var groupSep = GetGroupSeparator(decimalSep);
+                var expression = NumberRegex.Replace(search, m => NormalizeNumber(m.Value, isFunctionPresent, decimalSep, groupSep));
+
+                // WORKAROUND START: The 'pow' function in Mages v3.0.0 is broken.
+                // https://github.com/FlorianRappl/Mages/issues/132
+                // We bypass it by rewriting any pow(x,y) expression to the equivalent (x^y) expression
+                // before the engine sees it. This loop handles nested calls.
+                {
+                    string previous;
+                    do
+                    {
+                        previous = expression;
+                        expression = PowRegex.Replace(previous, PowMatchEvaluator);
+                    } while (previous != expression);
+                }
+                // WORKAROUND END
+
+                // WORKAROUND START: The 'log' & 'ln' function in Mages v3.0.0 are broken.
+                // https://github.com/FlorianRappl/Mages/issues/137
+                // We bypass it by rewriting any log & ln expression to the equivalent (log10 & log) expression
+                // before the engine sees it. This loop handles nested calls.
+                {
+                    string previous;
+                    do
+                    {
+                        previous = expression;
+                        expression = LogRegex.Replace(previous, LogMatchEvaluator);
+                    } while (previous != expression);
+                }
+                {
+                    string previous;
+                    do
+                    {
+                        previous = expression;
+                        expression = LnRegex.Replace(previous, LnMatchEvaluator);
+                    } while (previous != expression);
+                }
+                // WORKAROUND END
+
+                var result = MagesEngine.Interpret(expression);
+
+                if (result == null || string.IsNullOrEmpty(result.ToString()))
+                {
+                    if (!_settings.ShowErrorMessage) return EmptyResults;
+                    return
+                    [
+                        new Result
+                        {
+                            Title = Localize.flowlauncher_plugin_calculator_expression_not_complete(),
+                            IcoPath = IcoPath
+                        }
+                    ];
+                }
+
+                if (result.ToString() == "NaN")
+                {
+                    if (!_settings.ShowErrorMessage) return EmptyResults;
+                    return
+                    [
+                        new Result
+                        {
+                            Title = Localize.flowlauncher_plugin_calculator_not_a_number(),
+                            IcoPath = IcoPath
+                        }
+                    ];
+                }
+
+                if (result is Function)
+                {
+                    if (!_settings.ShowErrorMessage) return EmptyResults;
+                    return
+                    [
+                        new Result
+                        {
+                            Title = Localize.flowlauncher_plugin_calculator_expression_not_complete(),
+                            IcoPath = IcoPath
+                        }
+                    ];
+                }
+
+                if (!string.IsNullOrEmpty(result.ToString()))
+                {
+                    decimal roundedResult = Math.Round(Convert.ToDecimal(result), _settings.MaxDecimalPlaces, MidpointRounding.AwayFromZero);
+                    string newResult = FormatResult(roundedResult);
+                    
+                    var results = new List<Result>();
+
+                    // Calculation Result
+                    var resultObject = new Result
+                    {
+                        Title = $"= {newResult}",
+                        IcoPath = IcoPath,
+                        // Sorts above history but stays below user set topmost results (that would have max score)
+                        Score = HistoryItem.HistoryItemScore + 1,
+                        // Keep result scores deterministic so usage never reorders the calculator block
+                        AddSelectedCount = false,
+                        // Check context nullability for unit testing
+                        SubTitle = Context == null
+                            ? string.Empty
+                            : Localize.flowlauncher_plugin_calculator_copy_number_to_clipboard(),
+                        CopyText = newResult
+                    };
+
+                    resultObject.Action = BuildResultAction(newResult, originalQuery);
+
+                    if (_settings.EnableHistory && _settings.HistoryCreationMode == HistoryCreationMode.OnQuery)
+                    {
+                        History.AddOrUpdate(new PendingHistoryItem(originalQuery, newResult, DateTime.Now));
+                    }
+                    results.Add(resultObject);
+
+                    var resultsToReturn = new List<Result>();
+                    if (_settings.EnableHistory)
+                    {
+                        resultsToReturn = GetHistoryResults(originalQuery, query.ActionKeyword);
+                    }
+                    return results.Concat(resultsToReturn).ToList();
+
+                }
+            }
+            catch (Exception)
+            {
+                // Mages engine can throw various exceptions, for simplicity we catch them all and show a generic message.
+                if (!_settings.ShowErrorMessage) return EmptyResults;
+                return
+                [
+                    new Result
+                    {
+                        Title = Localize.flowlauncher_plugin_calculator_expression_not_complete(),
+                        IcoPath = IcoPath
+                    }
+                ];
+            }
+
+            return EmptyResults;
+        }
+
+        private List<Result> GetHistoryResults(string query, string actionKeyword)
+        {
+            var resultsToReturn = new List<Result>();
+            foreach (var item in History.GetItemsExcluding(query))
+            {
+                var timeDeltaStr = HistoryHelper.GetTimeDeltaString(Context, item.CalculatedAt);
+                resultsToReturn.Add(new Result
+                {
+                    Title = $"{item.Query} = {item.CalcResult}",
+                    SubTitle = Context == null
+                        ? timeDeltaStr
+                        : Localize.flowlauncher_plugin_calculator_history_subtitle(timeDeltaStr),
+                    IcoPath = HistoryItem.IcoPath,
+                    BadgeIcoPath = HistoryItem.BadgeIconPath,
+                    ShowBadge = true,
+                    Score = HistoryItem.HistoryItemScore,
+                    // Keep history ordered by recency, not by how often each entry was run
+                    AddSelectedCount = false,
+                    CopyText = item.CalcResult,
+                    Action = CreateChangeQueryAction(item.Query, actionKeyword)
+                });
+            }
+            return resultsToReturn;
+        }
+
+        private Func<ActionContext, bool> BuildResultAction
+        (
+            string newResult,
+            string originalQuery
+        )
+        {
+
+            var action = 
+                !_settings.EnableHistory
+                ? CreateClipboardAction(newResult) 
+                : CreateClipboardActionWithHistory(newResult, originalQuery);
+
+            return action;
+                
+        }
+
+        private Func<ActionContext, bool> CreateClipboardAction(string newResult)
+        {
+            return (_) =>
+            {
+                try
+                {
+                    Context.API.CopyToClipboard(newResult);
+
+                    return true;
+                }
+                catch (ExternalException)
+                {
+                    Context.API.ShowMsgBox(
+                        Localize.flowlauncher_plugin_calculator_failed_to_copy()
+                    );
+                    return false;
+                }
+            };
+        }
+
+        private Func<ActionContext, bool> CreateClipboardActionWithHistory(string newResult, string originalQuery)
+        {
+            var baseAction = CreateClipboardAction(newResult);
+            return (actionContext) =>
+            {
+                if (_settings.HistoryCreationMode == HistoryCreationMode.OnQuery)
+                {
+                    // Executing the result implies the calculation is intended, so worth saving to history
+                    History.CancelPending();
+                    History.AddOrUpdate(new HistoryItem(originalQuery, newResult, DateTime.Now));
+                    return baseAction(actionContext);
+                }
+
+                if (!baseAction(actionContext))
+                {
+                    return false;
+                }
+
+                var item = new HistoryItem(originalQuery, newResult, DateTime.Now);
+                History.AddOrUpdate(item);
+                return true;
+            };
+        }
+
+        /// <summary>
+        /// Creates an action that switches the current query to a stored history query,
+        /// letting the user re-run it while the normal result remains available for copying.
+        /// Returns false so the launcher stays open on the re-run expression.
+        /// </summary>
+        private Func<ActionContext, bool> CreateChangeQueryAction(string query, string actionKeyword)
+        {
+            return (_) =>
+            {
+                var fullQuery = string.IsNullOrEmpty(actionKeyword)
+                    ? query
+                    : $"{actionKeyword} {query}";
+                Context.API.ChangeQuery(fullQuery, true);
+                return false;
+            };
+        }
+
+        private static string PowMatchEvaluator(Match m)
+        {
+            // m.Groups[1].Value will be `(...)` with parens
+            var contentWithParen = m.Groups[1].Value;
+            // remove outer parens. `(min(2,3), 4)` becomes `min(2,3), 4`
+            var argsContent = contentWithParen[1..^1];
+
+            var bracketCount = 0;
+            var splitIndex = -1;
+
+            // Find the top-level comma that separates the two arguments of pow.
+            for (var i = 0; i < argsContent.Length; i++)
+            {
+                switch (argsContent[i])
+                {
+                    case '(':
+                    case '[':
+                        bracketCount++;
+                        break;
+                    case ')':
+                    case ']':
+                        bracketCount--;
+                        break;
+                    case ',' when bracketCount == 0:
+                        splitIndex = i;
+                        break;
+                }
+
+                if (splitIndex != -1)
+                    break;
+            }
+
+            if (splitIndex == -1)
+            {
+                // This indicates malformed arguments for pow, e.g., pow(5) or pow().
+                // Return original string to let Mages handle the error.
+                return m.Value;
+            }
+
+            var arg1 = argsContent[..splitIndex].Trim();
+            var arg2 = argsContent[(splitIndex + 1)..].Trim();
+
+            // Check for empty arguments which can happen with stray commas, e.g., pow(,5)
+            if (string.IsNullOrEmpty(arg1) || string.IsNullOrEmpty(arg2))
+            {
+                return m.Value;
+            }
+
+            return $"({arg1}^{arg2})";
+        }
+
+        private static string LogMatchEvaluator(Match m)
+        {
+            // m.Groups[1].Value will be `(...)` with parens
+            var contentWithParen = m.Groups[1].Value;
+            var argsContent = contentWithParen[1..^1];
+
+            // log is unary — if malformed, return original to let Mages handle it
+            var arg = argsContent.Trim();
+            if (string.IsNullOrEmpty(arg)) return m.Value;
+
+            // log(x) -> log10(x)   (natural log)
+            return $"(log10({arg}))";
+        }
+
+        private static string LnMatchEvaluator(Match m)
+        {
+            // m.Groups[1].Value will be `(...)` with parens
+            var contentWithParen = m.Groups[1].Value;
+            var argsContent = contentWithParen[1..^1];
+
+            // ln is unary — if malformed, return original to let Mages handle it
+            var arg = argsContent.Trim();
+            if (string.IsNullOrEmpty(arg)) return m.Value;
+
+            // ln(x) -> log(x)   (natural log)
+            return $"(log({arg}))";
+        }
+        private static string NormalizeNumber(string numberStr, bool isFunctionPresent, string decimalSep, string groupSep)
+        {
+            if (isFunctionPresent)
+            {
+                // STRICT MODE: When functions are present, ',' is ALWAYS an argument separator.
+                if (numberStr.Contains(','))
+                {
+                    return numberStr;
+                }
+
+                string processedStr = numberStr;
+
+                // Handle group separator, with special care for ambiguous dot.
+                if (!string.IsNullOrEmpty(groupSep))
+                {
+                    if (groupSep == ".")
+                    {
+                        var parts = processedStr.Split('.');
+                        if (parts.Length > 1)
+                        {
+                            var culture = CultureInfo.CurrentCulture;
+                            if (IsValidGrouping(parts, culture.NumberFormat.NumberGroupSizes))
+                            {
+                                processedStr = processedStr.Replace(groupSep, "");
+                            }
+                            // If not grouped, it's likely a decimal number, so we don't strip dots.
+                        }
+                    }
+                    else
+                    {
+                        processedStr = processedStr.Replace(groupSep, "");
+                    }
+                }
+
+                // Handle decimal separator.
+                if (decimalSep != ".")
+                {
+                    processedStr = processedStr.Replace(decimalSep, ".");
+                }
+
+                return processedStr;
+            }
+            else
+            {
+                // LENIENT MODE: No functions are present, so we can be flexible.
+                string processedStr = numberStr;
+                if (!string.IsNullOrEmpty(groupSep))
+                {
+                    processedStr = processedStr.Replace(groupSep, "");
+                }
+                if (decimalSep != ".")
+                {
+                    processedStr = processedStr.Replace(decimalSep, ".");
+                }
+                return processedStr;
+            }
+        }
+
+        private static bool IsValidGrouping(string[] parts, int[] groupSizes)
+        {
+            if (parts.Length <= 1) return true;
+
+            if (groupSizes is null || groupSizes.Length == 0 || groupSizes[0] == 0)
+                return false; // has groups, but culture defines none.
+
+            var firstPart = parts[0];
+            if (firstPart.StartsWith('-')) firstPart = firstPart[1..];
+            if (firstPart.Length == 0) return false; // e.g. ",123"
+
+            if (firstPart.Length > groupSizes[0]) return false;
+
+            var lastGroupSize = groupSizes.Last();
+            var canRepeatLastGroup = lastGroupSize != 0;
+
+            int groupIndex = 0;
+            for (int i = parts.Length - 1; i > 0; i--)
+            {
+                int expectedSize;
+                if (groupIndex < groupSizes.Length)
+                {
+                    expectedSize = groupSizes[groupIndex];
+                }
+                else if (canRepeatLastGroup)
+                {
+                    expectedSize = lastGroupSize;
+                }
+                else
+                {
+                    return false;
+                }
+
+                if (parts[i].Length != expectedSize) return false;
+
+                groupIndex++;
+            }
+
+            return true;
+        }
+
+        private string FormatResult(decimal roundedResult)
+        {
+            string decimalSeparator = GetDecimalSeparator();
+            string groupSeparator = GetGroupSeparator(decimalSeparator);
+
+            string resultStr = roundedResult.ToString(CultureInfo.InvariantCulture);
+
+            string[] parts = resultStr.Split('.');
+            string integerPart = parts[0];
+            string fractionalPart = parts.Length > 1 ? parts[1] : string.Empty;
+
+            if (_settings.UseThousandsSeparator && integerPart.Length > 3)
+            {
+                integerPart = ThousandGroupRegex.Replace(integerPart, groupSeparator);
+            }
+
+            if (!string.IsNullOrEmpty(fractionalPart))
+            {
+                return integerPart + decimalSeparator + fractionalPart;
+            }
+
+            return integerPart;
+        }
+
+        private string GetGroupSeparator(string decimalSeparator)
+        {
+            var culture = CultureInfo.CurrentCulture;
+            var systemGroupSeparator = culture.NumberFormat.NumberGroupSeparator;
+
+            if (_settings.DecimalSeparator == DecimalSeparator.UseSystemLocale)
+            {
+                return systemGroupSeparator;
+            }
+
+            // When a custom decimal separator is used,
+            // use the system's group separator unless it conflicts with the custom decimal separator.
+            if (decimalSeparator == systemGroupSeparator)
+            {
+                // Conflict: use the opposite of the decimal separator as a fallback.
+                return decimalSeparator == Dot ? Comma : Dot;
+            }
+
+            return systemGroupSeparator;
+        }
+
+        private string GetDecimalSeparator()
+        {
+            string systemDecimalSeparator = CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+            return _settings.DecimalSeparator switch
+            {
+                DecimalSeparator.UseSystemLocale => systemDecimalSeparator,
+                DecimalSeparator.Dot => Dot,
+                DecimalSeparator.Comma => Comma,
+                _ => systemDecimalSeparator,
+            };
+        }
+
+        public string GetTranslatedPluginTitle()
+        {
+            return Localize.flowlauncher_plugin_calculator_plugin_name();
+        }
+
+        public string GetTranslatedPluginDescription()
+        {
+            return Localize.flowlauncher_plugin_calculator_plugin_description();
+        }
+
+        public Control CreateSettingPanel()
+        {
+            return new CalculatorSettings(_viewModel);
+        }
+
+        public void OnCultureInfoChanged(CultureInfo newCulture)
+        {
+            DecimalSeparatorLocalized.UpdateLabels(_viewModel.AllDecimalSeparator);
+            HistoryCreationModeLocalized.UpdateLabels(_viewModel.AllHistoryCreationMode);
+        }
+
+        /// <summary>
+        /// Flushes any debounced history entry before Flow persists the plugin settings,
+        /// so a calculation entered just before shutdown is not lost.
+        /// </summary>
+        public void Save()
+        {
+            History?.FlushPending();
+        }
+    }
+}

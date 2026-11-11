@@ -1,0 +1,15 @@
+{
+  "ID": "5E9B2C41-8D7A-4F36-B0C2-6A1D9E4F7B83",
+  "ActionKeywords": [
+    "kill",
+    "bkill"
+  ],
+  "Name": "结束进程",
+  "Description": "kill 查看并结束进程（前台优先），bkill 只看后台进程，Shift+Enter 打开任务管理器",
+  "Author": "daddy",
+  "Version": "1.0.0",
+  "Language": "csharp",
+  "Website": "",
+  "ExecuteFileName": "Flow.Launcher.Plugin.KillProcess.dll",
+  "IcoPath": "Images\\app.png"
+}

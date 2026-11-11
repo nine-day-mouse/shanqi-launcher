@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Bundle
+      Name="闪启 Launcher"
+      Version="$(var.Version)"
+      Manufacturer="ShanQi"
+      UpgradeCode="2C5B8D14-6E93-4A7B-8F02-1D9E5C7A3B46"
+      IconSourceFile="$(var.IconPath)">
+
+    <BootstrapperApplication Id="WixStandardBootstrapperApplication.HyperlinkLicense" />
+
+    <Chain>
+      <MsiPackage SourceFile="$(var.MsiPath)" Vital="yes" />
+    </Chain>
+
+  </Bundle>
+
+</Wix>

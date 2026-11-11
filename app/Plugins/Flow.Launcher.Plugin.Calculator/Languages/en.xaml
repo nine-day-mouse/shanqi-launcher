@@ -1,0 +1,37 @@
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:system="clr-namespace:System;assembly=mscorlib">
+
+    <system:String x:Key="flowlauncher_plugin_calculator_plugin_name">Calculator</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_plugin_description">Perform mathematical calculations, including hex values and advanced functions such as 'min(1,2,3)', 'sqrt(123)' and 'cos(123)'.</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_not_a_number">Not a number (NaN)</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_expression_not_complete">Expression wrong or incomplete (Did you forget some parentheses?)</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_copy_number_to_clipboard">Copy this number to the clipboard</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_output_decimal_separator">Decimal separator</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_output_decimal_separator_help">The decimal separator to be used in the output.</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_decimal_separator_use_system_locale">Use system locale</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_decimal_separator_comma">Comma (,)</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_decimal_separator_dot">Dot (.)</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_max_decimal_places">Max. decimal places</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_use_thousands_separator">Show thousands separator in results</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_failed_to_copy">Copy failed, please try later</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_show_error_message">Show error message when calculation fails</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_enable_history">Enable History</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_history_subtitle">{0}</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_just_now">Just now</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_minute_ago">1 minute ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_minutes_ago">{0} minutes ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_hour_ago">1 hour ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_hours_ago">{0} hours ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_day_ago">1 day ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_days_ago">{0} days ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_month_ago">1 month ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_months_ago">{0} months ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_year_ago">1 year ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_time_years_ago">{0} years ago</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_history_creation_mode">History save mode</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_history_creation_mode_on_query">Save on query</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_history_creation_mode_on_enter">Save on Enter</system:String>
+    <system:String x:Key="flowlauncher_plugin_calculator_history_creation_mode_warning">Warning: Due to the plugin's architecture, saving on query may register incomplete calculations in the history while you type.</system:String>
+</ResourceDictionary>
